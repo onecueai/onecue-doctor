@@ -36,14 +36,16 @@ OneCue doctor verifies that project memory can actually work in this repository:
    The script checks both installs: the skill store (`.onecue/memories/` in the
    project) and the CLI store (`~/.onecue/projects/<fingerprint>/`).
 
-Expected output is one `PASS` or `WARN` line per check:
+Expected output is one `PASS` or `WARN` line per check. Hook and settings
+checks are reported per harness (`claude`, `devin`) — the CLI writes hooks to
+`.claude/settings.local.json` and `.devin/config.local.json`:
 
 - `Node >= 20` — the CLI needs Node 20 or newer.
 - `skill store present` — `.onecue/memories/` exists at the project root.
 - `CLI store present` — `onecue init` has run (only relevant with the CLI).
 - `store writable` — the store location can be written.
-- `settings readable` — the Claude Code settings file parses.
-- `hooks installed` — OneCue hooks exist for all four events.
+- `settings readable (claude|devin)` — the harness settings file parses.
+- `hooks (claude|devin)` — OneCue hooks exist for all four events.
 - `hook targets exist` — hook commands point at a CLI path that still exists.
 - `memories readable` — no corrupt lines in the CLI's `memories.jsonl`.
 
@@ -57,8 +59,8 @@ When the CLI is unavailable, verify the same five things yourself:
 1. **Node version.** `node --version` — major version must be 20 or higher.
 2. **Store.** `.onecue/` exists at the repository root and is writable (create a temp file inside it, then remove it). If `.onecue/` is missing entirely, the project was never initialized.
 3. **Initialization.** `.onecue/memories/` exists. An empty directory is fine; a missing one is not.
-4. **Settings.** Read `.claude/settings.json` (project) or `~/.claude/settings.json` (user). The file must parse as JSON.
-5. **Hooks.** The settings file must contain OneCue hook entries (look for `onecue` in the hooks section). Hooks are what let memories surface automatically.
+4. **Settings.** Read `.claude/settings.local.json` (Claude Code) and `.devin/config.local.json` (Devin) in the project. Each file that exists must parse as JSON.
+5. **Hooks.** Each existing settings file must contain OneCue hook entries (look for `onecue` in the hooks section). Hooks are what let memories surface automatically.
 
 ## Report
 

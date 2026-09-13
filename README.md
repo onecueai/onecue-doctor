@@ -35,8 +35,10 @@ Run onecue doctor
 | `Node >= 20` | The OneCue CLI has a modern runtime |
 | `store writable` | `.onecue/` can be created and written |
 | `project initialized` | `onecue init` has run in this repo |
-| `settings readable` | Your Claude Code settings file parses |
-| `hooks installed` | Memories can surface automatically on every prompt |
+| `settings readable (claude\|devin)` | Each harness settings file parses |
+| `hooks (claude\|devin)` | Memories can surface automatically on every prompt, in Claude Code and Devin |
+| `hook targets exist` | Hook commands point at a CLI that is still there |
+| `memories readable` | No corrupt lines in `memories.jsonl` |
 
 Every `WARN` comes with the exact remedy — `onecue init`, `onecue install`, a permissions fix, or a Node upgrade — and Doctor offers to apply it.
 

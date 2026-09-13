@@ -5,7 +5,8 @@
  * Zero dependencies. Checks both OneCue installs:
  *   - the skill store:    <project>/.onecue/memories/  (Markdown, agent-written)
  *   - the CLI store:      ~/.onecue/projects/<fp>/     (JSONL, `onecue` binary)
- *   - the hooks:          <project>/.claude/settings.local.json
+ *   - the hooks:          <project>/.claude/settings.local.json (Claude Code)
+ *                         <project>/.devin/config.local.json   (Devin)
  *
  * Usage: node doctor.mjs [--json] [--report]
  * Exit code is 1 when any check warns, so scripts and CI can rely on it.
@@ -28,7 +29,7 @@ const HOOK_EVENTS = [
   "Stop",
   "SessionEnd",
 ];
-const ROOT_MARKERS = [".git", "package.json", ".claude"];
+const ROOT_MARKERS = [".git", "package.json", ".claude", ".devin"];
 const ONECUE_MARKER = /onecue/i;
 const HOOK_MARKER = /\bhook\b/;
 const HOOK_TARGET = /node\s+"([^"]+)"\s+hook/;
@@ -154,36 +155,53 @@ const collect = () => {
     cliInstalled ? cliDir : skillDir
   );
 
-  // Claude Code hooks.
-  const settingsFile = join(fp.root, ".claude", "settings.local.json");
-  const settings = readJsonSafe(settingsFile);
-  check(
-    "settings readable",
-    settings.status !== "corrupt",
-    settings.status === "corrupt"
-      ? `${settingsFile} is not valid JSON`
-      : settingsFile
-  );
+  // Harness hooks: same JSON format in Claude Code and Devin config files.
+  const harnessFiles = [
+    { file: join(fp.root, ".claude", "settings.local.json"), id: "claude" },
+    { file: join(fp.root, ".devin", "config.local.json"), id: "devin" },
+  ];
+  const hookCommands = [];
+  const existing = harnessFiles.filter(({ file }) => existsSync(file));
+  if (existing.length === 0) {
+    check("hooks installed", false, "run `onecue install`");
+  }
+  for (const { file, id } of existing) {
+    const settings = readJsonSafe(file);
+    check(
+      `settings readable (${id})`,
+      settings.status !== "corrupt",
+      settings.status === "corrupt" ? `${file} is not valid JSON` : file
+    );
+    if (settings.status === "corrupt") {
+      check(`hooks (${id})`, false, "settings unreadable");
+      continue;
+    }
+    const hooks = settings.value?.hooks ?? {};
+    const missing = HOOK_EVENTS.filter(
+      (event) =>
+        !(hooks[event] ?? []).some((matcher) =>
+          (matcher.hooks ?? []).some((hook) =>
+            isOneCueCommand(hook.command ?? "")
+          )
+        )
+    );
+    check(
+      `hooks (${id})`,
+      missing.length === 0,
+      missing.length > 0
+        ? `missing: ${missing.join(", ")}`
+        : `${HOOK_EVENTS.length} events`
+    );
+    hookCommands.push(
+      ...Object.values(hooks)
+        .flat()
+        .flatMap((matcher) => (matcher.hooks ?? []).map((hook) => hook.command))
+        .filter(
+          (command) => typeof command === "string" && isOneCueCommand(command)
+        )
+    );
+  }
 
-  const hooks = settings.value?.hooks ?? {};
-  const missing = HOOK_EVENTS.filter(
-    (event) =>
-      !(hooks[event] ?? []).some((matcher) =>
-        (matcher.hooks ?? []).some((hook) => isOneCueCommand(hook.command ?? ""))
-      )
-  );
-  check(
-    "hooks installed",
-    missing.length === 0,
-    missing.length > 0
-      ? `missing: ${missing.join(", ")}`
-      : `${HOOK_EVENTS.length} events`
-  );
-
-  const hookCommands = Object.values(hooks)
-    .flat()
-    .flatMap((matcher) => (matcher.hooks ?? []).map((hook) => hook.command))
-    .filter((command) => typeof command === "string" && isOneCueCommand(command));
   const deadTargets = [
     ...new Set(
       hookCommands
