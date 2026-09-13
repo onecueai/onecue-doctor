@@ -42,7 +42,7 @@ Every `WARN` comes with the exact remedy — `onecue init`, `onecue install`, a 
 
 ## Two ways to run
 
-- **With the `onecue` CLI** — runs `onecue doctor`, the source of truth.
+- **With the `onecue` CLI** (`npm i -g onecue-cli`) — runs `onecue doctor`, the source of truth.
 - **Without it** — performs the same five checks manually. It never simulates results; if a check can't run, it says so.
 
 ## Honesty rules

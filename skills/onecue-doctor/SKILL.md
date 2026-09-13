@@ -18,7 +18,8 @@ OneCue doctor verifies that project memory can actually work in this repository:
 
 **Never improvise the checks.** Run real code, in this order:
 
-1. If the `onecue` CLI is installed, it is the source of truth:
+1. If the `onecue` CLI is installed, it is the source of truth
+   (`npm i -g onecue-cli` installs it):
 
    ```bash
    onecue doctor
