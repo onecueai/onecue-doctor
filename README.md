@@ -1,6 +1,19 @@
-# onecue-doctor
+<h1 align="center">OneCue Doctor</h1>
 
-A Claude Code skill that diagnoses your [OneCue](https://onecue.sh) setup — the local memory store, the hooks, and the runtime — and tells you exactly what to fix.
+<p align="center">
+  <strong>Check the setup before blaming the memory.</strong><br>
+  Diagnoses your OneCue installation — store, hooks, runtime — and tells you exactly what to fix.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="skills/onecue-doctor/SKILL.md"><img src="https://img.shields.io/badge/version-0.1.0-green.svg" alt="Version 0.1.0"></a>
+  <img src="https://img.shields.io/badge/needs-zero%20install-black.svg" alt="Works without the CLI">
+</p>
+
+---
+
+A memory that doesn't surface is almost never a memory problem — it's a setup problem. The store wasn't initialized, the hooks didn't install, the runtime is too old. Doctor finds which one, in seconds.
 
 ## Install
 
@@ -8,20 +21,39 @@ A Claude Code skill that diagnoses your [OneCue](https://onecue.sh) setup — th
 npx skills add onecueai/onecue-doctor
 ```
 
-Then ask Claude: "run onecue doctor" or "is OneCue working?"
+Then ask Claude:
+
+```text
+Run onecue doctor
+```
 
 ## What it checks
 
-| Check | What it means |
+| Check | PASS means |
 | --- | --- |
-| Node >= 20 | The OneCue CLI needs a modern Node runtime |
-| Store writable | `.onecue/` can be created and written |
-| Project initialized | `onecue init` has run in this repo |
-| Settings readable | Your Claude Code settings file parses |
-| Hooks installed | OneCue hooks are present so memories surface automatically |
+| `Node >= 20` | The OneCue CLI has a modern runtime |
+| `store writable` | `.onecue/` can be created and written |
+| `project initialized` | `onecue init` has run in this repo |
+| `settings readable` | Your Claude Code settings file parses |
+| `hooks installed` | Memories can surface automatically on every prompt |
 
-If the `onecue` CLI is installed it runs `onecue doctor` directly. Without the CLI it performs the same checks manually — it never simulates results.
+Every `WARN` comes with the exact remedy — `onecue init`, `onecue install`, a permissions fix, or a Node upgrade — and Doctor offers to apply it.
+
+## Two ways to run
+
+- **With the `onecue` CLI** — runs `onecue doctor`, the source of truth.
+- **Without it** — performs the same five checks manually. It never simulates results; if a check can't run, it says so.
+
+## Honesty rules
+
+- Never claims a check passed if it didn't run.
+- Never creates or modifies memories — doctor only diagnoses.
+- If nothing is installed, it says "OneCue is not installed in this project" and points to the install command.
 
 ## Related
 
 - [onecue-skill](https://github.com/onecueai/onecue-skill) — durable project memory for Claude Code
+
+## License
+
+[MIT](LICENSE)
