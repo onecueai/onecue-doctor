@@ -16,6 +16,7 @@ import {
   accessSync,
   constants as fsConstants,
   existsSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   writeFileSync,
@@ -125,15 +126,11 @@ const collect = () => {
   const major = Number(process.versions.node.split(".")[0]);
   check("Node >= 20", major >= 20, `found ${process.versions.node}`);
 
-  // Skill store: Markdown memories the agent writes itself.
+  // Memory store: either the Markdown skill store (<project>/.onecue) or the
+  // CLI store (~/.onecue/projects/<fp>) counts — modern installs use the CLI.
   const skillDir = join(fp.root, ".onecue");
   const skillMemories = join(skillDir, "memories");
   const skillInstalled = existsSync(skillMemories);
-  check(
-    "skill store present",
-    skillInstalled,
-    skillInstalled ? skillMemories : `no ${skillMemories}`
-  );
 
   // CLI store: ~/.onecue/projects/<fingerprint>/config.json
   const cliDir = join(
@@ -144,9 +141,13 @@ const collect = () => {
   const cliConfig = join(cliDir, "config.json");
   const cliInstalled = existsSync(cliConfig);
   check(
-    "CLI store present",
-    cliInstalled,
-    cliInstalled ? `${cliDir}` : "run `onecue init` (or none installed)"
+    "memory store present",
+    skillInstalled || cliInstalled,
+    cliInstalled
+      ? cliDir
+      : skillInstalled
+        ? skillMemories
+        : "run `onecue install` inside the repo"
   );
 
   check(
@@ -238,22 +239,120 @@ const collect = () => {
     );
   }
 
-  return checks;
+  return { checks, cliDir };
+};
+
+const jsonl = (file) => {
+  if (!existsSync(file)) {
+    return [];
+  }
+  const out = [];
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      // corrupt line — skip
+    }
+  }
+  return out;
+};
+
+/**
+ * Counts what the session logs actually recorded: prompts observed, cues
+ * injected, memories reused. The token figure is surfaced cue payload size
+ * (chars / 4) — a labeled estimate, not measured model spend.
+ */
+const collectImpact = (cliDir) => {
+  const stats = {
+    byKind: {},
+    cues: 0,
+    deliveredTokens: 0,
+    prompts: 0,
+    sessions: 0,
+    uniqueMemories: 0,
+  };
+  const sessionsDir = join(cliDir, "sessions");
+  if (!existsSync(sessionsDir)) {
+    return stats;
+  }
+  const files = readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl"));
+  stats.sessions = files.length;
+
+  const cueIds = new Set();
+  const surfaced = [];
+  for (const file of files) {
+    for (const entry of jsonl(join(sessionsDir, file))) {
+      if (entry.role === "user") {
+        stats.prompts += 1;
+      }
+      if (entry.role === "cue" && entry.memoryId) {
+        stats.cues += 1;
+        cueIds.add(entry.memoryId);
+        surfaced.push(entry.memoryId);
+      }
+    }
+  }
+  stats.uniqueMemories = cueIds.size;
+
+  const byId = new Map(
+    jsonl(join(cliDir, "memories.jsonl"))
+      .filter((m) => m.id)
+      .map((m) => [m.id, m])
+  );
+  for (const id of surfaced) {
+    const memory = byId.get(id);
+    const kind = memory?.metadata?.kind ?? "unknown";
+    stats.byKind[kind] = (stats.byKind[kind] ?? 0) + 1;
+    stats.deliveredTokens += Math.ceil((memory?.text?.length ?? 0) / 4);
+  }
+  return stats;
+};
+
+const fmtTokens = (n) => (n >= 1000 ? `≈${(n / 1000).toFixed(1)}k` : `≈${n}`);
+
+const impactLines = (stats) => {
+  if (stats.prompts === 0 && stats.cues === 0) {
+    return [
+      "Impact",
+      "  no hooked activity yet — cues appear after the first hooked prompt",
+    ];
+  }
+  const silence = Math.max(0, stats.prompts - stats.cues);
+  const kinds = Object.entries(stats.byKind)
+    .sort((a, b) => b[1] - a[1])
+    .map(([kind, n]) => `${kind} ×${n}`)
+    .join(", ");
+  return [
+    "Impact — counted from local session logs",
+    `  prompts observed    ${stats.prompts} across ${stats.sessions} session(s)`,
+    `  cues surfaced       ${stats.cues} · ${stats.uniqueMemories} unique memories${kinds ? ` (${kinds})` : ""}`,
+    `  silence             ${silence} prompt(s) — nothing relevant, nothing injected`,
+    `  context delivered   ${fmtTokens(stats.deliveredTokens)} tokens of prior context you didn't retype`,
+    "  estimates, not measured spend — real token accounting is planned",
+  ];
 };
 
 const main = () => {
   const args = process.argv.slice(2);
-  const checks = collect();
+  const { checks, cliDir } = collect();
+  const impact = collectImpact(cliDir);
   const ok = checks.every((entry) => entry.ok);
 
   if (args.includes("--json")) {
-    process.stdout.write(`${JSON.stringify({ checks, ok }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify({ checks, impact, ok }, null, 2)}\n`
+    );
   } else {
     const lines = checks.map(
       ({ label, ok: pass, detail }) =>
         `  ${pass ? "PASS" : "WARN"}  ${label}${detail ? ` — ${detail}` : ""}`
     );
-    process.stdout.write(`${["OneCue doctor", ...lines].join("\n")}\n`);
+    process.stdout.write(
+      `${["OneCue doctor", ...lines, "", ...impactLines(impact)].join("\n")}\n`
+    );
   }
 
   if (args.includes("--report")) {
@@ -271,6 +370,10 @@ const main = () => {
       "| Check | Result | Detail |",
       "| --- | --- | --- |",
       rows,
+      "",
+      "## Impact — counted from local session logs",
+      "",
+      ...impactLines(impact).slice(1),
       "",
       ok
         ? "All checks passed."

@@ -12,7 +12,7 @@ user_invocable: true
 
 **Check the setup before blaming the memory.**
 
-OneCue doctor verifies that project memory can actually work in this repository: the store directory, the Claude Code hooks, and the runtime. Run it when something feels off — a memory was not recalled, a hook seems silent, or the user is unsure OneCue is installed.
+OneCue doctor verifies that project memory can actually work in this repository: the store directory, the Claude Code hooks, and the runtime. It also reports observed impact — prompts seen, cues surfaced, memory reuse — counted from local session logs. Run it when something feels off — a memory was not recalled, a hook seems silent, or the user is unsure OneCue is installed.
 
 ## Preferred path: run the diagnostics
 
@@ -41,13 +41,18 @@ checks are reported per harness (`claude`, `devin`) — the CLI writes hooks to
 `.claude/settings.local.json` and `.devin/config.local.json`:
 
 - `Node >= 20` — the CLI needs Node 20 or newer.
-- `skill store present` — `.onecue/memories/` exists at the project root.
-- `CLI store present` — `onecue init` has run (only relevant with the CLI).
+- `memory store present` — the CLI store (`~/.onecue/projects/<fingerprint>/`) or the Markdown skill store (`.onecue/memories/`) exists.
 - `store writable` — the store location can be written.
 - `settings readable (claude|devin)` — the harness settings file parses.
 - `hooks (claude|devin)` — OneCue hooks exist for all four events.
 - `hook targets exist` — hook commands point at a CLI path that still exists.
 - `memories readable` — no corrupt lines in the CLI's `memories.jsonl`.
+
+After the checks comes the **Impact** section — real counts from session
+logs: prompts observed, cues surfaced (by memory kind), prompts that got
+silence, and the estimated tokens of prior context delivered. The token
+figure is cue payload size (chars ÷ 4), labeled an estimate — it is not
+measured model spend, so never present it as savings.
 
 Only if neither path can run — no `onecue` binary and the script is missing —
 fall back to the manual checks below.
