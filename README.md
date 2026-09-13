@@ -9,6 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="skills/onecue-doctor/SKILL.md"><img src="https://img.shields.io/badge/version-0.1.0-green.svg" alt="Version 0.1.0"></a>
   <img src="https://img.shields.io/badge/needs-zero%20install-black.svg" alt="Works without the CLI">
+  <a href="https://skills.sh/onecueai/onecue-doctor"><img src="https://skills.sh/b/onecueai/onecue-doctor" alt="Installs on skills.sh"></a>
 </p>
 
 ---
