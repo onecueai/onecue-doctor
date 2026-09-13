@@ -47,12 +47,17 @@ checks are reported per harness (`claude`, `devin`) — the CLI writes hooks to
 - `hooks (claude|devin)` — OneCue hooks exist for all four events.
 - `hook targets exist` — hook commands point at a CLI path that still exists.
 - `memories readable` — no corrupt lines in the CLI's `memories.jsonl`.
+- `session logs readable` — no unreadable or malformed entries in the session logs.
 
 After the checks comes the **Impact** section — real counts from session
-logs: prompts observed, cues surfaced (by memory kind), prompts that got
-silence, and the estimated tokens of prior context delivered. The token
-figure is cue payload size (chars ÷ 4), labeled an estimate — it is not
-measured model spend, so never present it as savings.
+logs: prompts observed, cues surfaced (by the memory kind recorded when each
+cue was emitted), and the estimated tokens of cue payload delivered. Silence
+is not measured — a prompt without a cue can mean suppression or a hook
+failure, not "nothing relevant." Token and kind figures come from the payload
+recorded at emit time, so editing or forgetting a memory never rewrites
+history; cues logged before payload recording are excluded from the token
+estimate and called out. The figure is chars ÷ 4, labeled an estimate — it is
+not measured model spend, so never present it as savings.
 
 Only if neither path can run — no `onecue` binary and the script is missing —
 fall back to the manual checks below.

@@ -242,12 +242,17 @@ const collect = () => {
   return { checks, cliDir };
 };
 
-const jsonl = (file) => {
-  if (!existsSync(file)) {
-    return [];
+const readSafe = (file) => {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return null;
   }
+};
+
+const parseJsonl = (text) => {
   const out = [];
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for (const line of text.split("\n")) {
     if (!line.trim()) {
       continue;
     }
@@ -260,10 +265,26 @@ const jsonl = (file) => {
   return out;
 };
 
+const jsonl = (file) => {
+  const text = readSafe(file);
+  return text === null ? [] : parseJsonl(text);
+};
+
+const MEMORY_KINDS = new Set([
+  "decision",
+  "discovery",
+  "insight",
+  "open_loop",
+  "reference",
+]);
+const SESSION_ROLES = new Set(["user", "cue", "assistant", "session_end"]);
+
 /**
  * Counts what the session logs actually recorded: prompts observed, cues
- * injected, memories reused. The token figure is surfaced cue payload size
- * (chars / 4) — a labeled estimate, not measured model spend.
+ * injected, memories reused. Token and kind figures come from the payload
+ * recorded when the cue was emitted — never reconstructed from the current
+ * memory text, which edits and forgets would rewrite. The token figure is
+ * cue payload size (chars / 4) — a labeled estimate, not measured spend.
  */
 const collectImpact = (cliDir) => {
   const stats = {
@@ -273,54 +294,93 @@ const collectImpact = (cliDir) => {
     prompts: 0,
     sessions: 0,
     uniqueMemories: 0,
+    unmeasuredCues: 0,
+    skippedEntries: 0,
+    unreadableLogs: 0,
+    tokenEstimateMethod: "ceil(cueChars / 4)",
   };
   const sessionsDir = join(cliDir, "sessions");
   if (!existsSync(sessionsDir)) {
     return stats;
   }
-  const files = readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl"));
-  stats.sessions = files.length;
+  let files;
+  try {
+    files = readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl"));
+  } catch {
+    stats.unreadableLogs += 1;
+    return stats;
+  }
 
   const cueIds = new Set();
-  const surfaced = [];
+  const sessions = new Set();
   for (const file of files) {
-    for (const entry of jsonl(join(sessionsDir, file))) {
+    const text = readSafe(join(sessionsDir, file));
+    if (text === null) {
+      stats.unreadableLogs += 1;
+      continue;
+    }
+    const entries = parseJsonl(text);
+    stats.skippedEntries +=
+      text.split("\n").filter((line) => line.trim()).length - entries.length;
+    for (const entry of entries) {
+      if (
+        !entry ||
+        typeof entry !== "object" ||
+        Array.isArray(entry) ||
+        typeof entry.sessionId !== "string" ||
+        !entry.sessionId.trim() ||
+        !SESSION_ROLES.has(entry.role) ||
+        (entry.role === "cue" &&
+          (typeof entry.memoryId !== "string" || !entry.memoryId.trim()))
+      ) {
+        stats.skippedEntries += 1;
+        continue;
+      }
       if (entry.role === "user") {
         stats.prompts += 1;
+        sessions.add(entry.sessionId);
       }
-      if (entry.role === "cue" && entry.memoryId) {
+      if (entry.role === "cue") {
         stats.cues += 1;
+        sessions.add(entry.sessionId);
         cueIds.add(entry.memoryId);
-        surfaced.push(entry.memoryId);
+        const kind = MEMORY_KINDS.has(entry.memoryKind)
+          ? entry.memoryKind
+          : "unknown";
+        stats.byKind[kind] = (stats.byKind[kind] ?? 0) + 1;
+        if (
+          typeof entry.cueChars === "number" &&
+          Number.isSafeInteger(entry.cueChars) &&
+          entry.cueChars >= 0
+        ) {
+          stats.deliveredTokens += Math.ceil(entry.cueChars / 4);
+        } else {
+          stats.unmeasuredCues += 1;
+        }
       }
     }
   }
+  stats.sessions = sessions.size;
   stats.uniqueMemories = cueIds.size;
-
-  const byId = new Map(
-    jsonl(join(cliDir, "memories.jsonl"))
-      .filter((m) => m.id)
-      .map((m) => [m.id, m])
-  );
-  for (const id of surfaced) {
-    const memory = byId.get(id);
-    const kind = memory?.metadata?.kind ?? "unknown";
-    stats.byKind[kind] = (stats.byKind[kind] ?? 0) + 1;
-    stats.deliveredTokens += Math.ceil((memory?.text?.length ?? 0) / 4);
-  }
   return stats;
 };
 
 const fmtTokens = (n) => (n >= 1000 ? `≈${(n / 1000).toFixed(1)}k` : `≈${n}`);
 
 const impactLines = (stats) => {
+  const warnings =
+    stats.unreadableLogs || stats.skippedEntries
+      ? [
+          `  incomplete logs     ${stats.unreadableLogs} unreadable file(s), ${stats.skippedEntries} invalid entry/entries skipped`,
+        ]
+      : [];
   if (stats.prompts === 0 && stats.cues === 0) {
     return [
       "Impact",
-      "  no hooked activity yet — cues appear after the first hooked prompt",
+      "  no hooked activity found in readable prompt/cue entries",
+      ...warnings,
     ];
   }
-  const silence = Math.max(0, stats.prompts - stats.cues);
   const kinds = Object.entries(stats.byKind)
     .sort((a, b) => b[1] - a[1])
     .map(([kind, n]) => `${kind} ×${n}`)
@@ -329,9 +389,15 @@ const impactLines = (stats) => {
     "Impact — counted from local session logs",
     `  prompts observed    ${stats.prompts} across ${stats.sessions} session(s)`,
     `  cues surfaced       ${stats.cues} · ${stats.uniqueMemories} unique memories${kinds ? ` (${kinds})` : ""}`,
-    `  silence             ${silence} prompt(s) — nothing relevant, nothing injected`,
-    `  context delivered   ${fmtTokens(stats.deliveredTokens)} tokens of prior context you didn't retype`,
-    "  estimates, not measured spend — real token accounting is planned",
+    "  silence is not measured — no cue can also mean suppression or a hook failure",
+    `  cue payload         ${fmtTokens(stats.deliveredTokens)} estimated tokens across ${stats.cues - stats.unmeasuredCues}/${stats.cues} recorded payload sizes`,
+    ...(stats.unmeasuredCues
+      ? [
+          `  payload size unavailable for ${stats.unmeasuredCues} cue(s); excluded from token estimate`,
+        ]
+      : []),
+    "  estimates, not measured spend — ceil(payload characters / 4), not savings or proof of use",
+    ...warnings,
   ];
 };
 
@@ -339,6 +405,11 @@ const main = () => {
   const args = process.argv.slice(2);
   const { checks, cliDir } = collect();
   const impact = collectImpact(cliDir);
+  checks.push({
+    label: "session logs readable",
+    ok: impact.unreadableLogs === 0 && impact.skippedEntries === 0,
+    detail: `${impact.unreadableLogs} unreadable file(s), ${impact.skippedEntries} invalid entry/entries`,
+  });
   const ok = checks.every((entry) => entry.ok);
 
   if (args.includes("--json")) {
