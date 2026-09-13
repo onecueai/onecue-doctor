@@ -14,23 +14,40 @@ user_invocable: true
 
 OneCue doctor verifies that project memory can actually work in this repository: the store directory, the Claude Code hooks, and the runtime. Run it when something feels off — a memory was not recalled, a hook seems silent, or the user is unsure OneCue is installed.
 
-## Preferred path: the CLI
+## Preferred path: run the diagnostics
 
-If the OneCue CLI is installed, prefer it — it is the source of truth:
+**Never improvise the checks.** Run real code, in this order:
 
-```bash
-onecue doctor
-```
+1. If the `onecue` CLI is installed, it is the source of truth:
+
+   ```bash
+   onecue doctor
+   ```
+
+2. Otherwise run the bundled script — same checks, zero install, exits non-zero on warnings:
+
+   ```bash
+   node scripts/doctor.mjs            # run from this skill's directory
+   node scripts/doctor.mjs --json     # machine-readable output
+   node scripts/doctor.mjs --report   # also writes onecue-doctor-report.md
+   ```
+
+   The script checks both installs: the skill store (`.onecue/memories/` in the
+   project) and the CLI store (`~/.onecue/projects/<fingerprint>/`).
 
 Expected output is one `PASS` or `WARN` line per check:
 
 - `Node >= 20` — the CLI needs Node 20 or newer.
-- `store writable` — `.onecue/` can be created and written.
-- `project initialized` — `onecue init` has run in this repository.
+- `skill store present` — `.onecue/memories/` exists at the project root.
+- `CLI store present` — `onecue init` has run (only relevant with the CLI).
+- `store writable` — the store location can be written.
 - `settings readable` — the Claude Code settings file parses.
-- `hooks installed` — OneCue hooks are present in settings.
+- `hooks installed` — OneCue hooks exist for all four events.
+- `hook targets exist` — hook commands point at a CLI path that still exists.
+- `memories readable` — no corrupt lines in the CLI's `memories.jsonl`.
 
-If `onecue` is not on PATH, do not guess at results — run the manual checks below instead.
+Only if neither path can run — no `onecue` binary and the script is missing —
+fall back to the manual checks below.
 
 ## Manual checks
 
@@ -44,7 +61,10 @@ When the CLI is unavailable, verify the same five things yourself:
 
 ## Report
 
-Summarize each check as `PASS` or `WARN` with a one-line detail. For every `WARN`, give the exact remedy:
+When the user asks for a saved report, run the script with `--report` — it
+writes `onecue-doctor-report.md` in the current directory. Otherwise summarize
+each check as `PASS` or `WARN` with a one-line detail. For every `WARN`, give
+the exact remedy:
 
 - Node too old → upgrade Node to 20+.
 - Store missing/not writable → fix permissions, then `onecue init` (or create `.onecue/memories/` if there is no CLI).
