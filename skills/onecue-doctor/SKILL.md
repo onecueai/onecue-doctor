@@ -1,0 +1,61 @@
+---
+name: onecue-doctor
+description: Diagnoses whether OneCue project memory is set up correctly in the current repository. This skill should be used when the user asks to "check OneCue", "run onecue doctor", "is OneCue working", "debug OneCue", or when OneCue memories do not seem to be remembered or recalled. It verifies the local store, the Claude Code hook installation, and the Node runtime, then suggests the exact fix for anything that is wrong. Do not use it to create or recall memories — that is the onecue skill.
+license: MIT
+metadata:
+  author: onecueai
+  version: "0.1.0"
+user_invocable: true
+---
+
+# OneCue Doctor
+
+**Check the setup before blaming the memory.**
+
+OneCue doctor verifies that project memory can actually work in this repository: the store directory, the Claude Code hooks, and the runtime. Run it when something feels off — a memory was not recalled, a hook seems silent, or the user is unsure OneCue is installed.
+
+## Preferred path: the CLI
+
+If the OneCue CLI is installed, prefer it — it is the source of truth:
+
+```bash
+onecue doctor
+```
+
+Expected output is one `PASS` or `WARN` line per check:
+
+- `Node >= 20` — the CLI needs Node 20 or newer.
+- `store writable` — `.onecue/` can be created and written.
+- `project initialized` — `onecue init` has run in this repository.
+- `settings readable` — the Claude Code settings file parses.
+- `hooks installed` — OneCue hooks are present in settings.
+
+If `onecue` is not on PATH, do not guess at results — run the manual checks below instead.
+
+## Manual checks
+
+When the CLI is unavailable, verify the same five things yourself:
+
+1. **Node version.** `node --version` — major version must be 20 or higher.
+2. **Store.** `.onecue/` exists at the repository root and is writable (create a temp file inside it, then remove it). If `.onecue/` is missing entirely, the project was never initialized.
+3. **Initialization.** `.onecue/memories/` exists. An empty directory is fine; a missing one is not.
+4. **Settings.** Read `.claude/settings.json` (project) or `~/.claude/settings.json` (user). The file must parse as JSON.
+5. **Hooks.** The settings file must contain OneCue hook entries (look for `onecue` in the hooks section). Hooks are what let memories surface automatically.
+
+## Report
+
+Summarize each check as `PASS` or `WARN` with a one-line detail. For every `WARN`, give the exact remedy:
+
+- Node too old → upgrade Node to 20+.
+- Store missing/not writable → fix permissions, then `onecue init` (or create `.onecue/memories/` if there is no CLI).
+- Not initialized → `onecue init`.
+- Settings unreadable → repair the JSON in the settings file; do not overwrite the file — show the parse error.
+- Hooks missing → `onecue install`.
+
+Offer to apply the fix. Ask before writing to settings or creating directories.
+
+## Honesty rules
+
+- Never claim a check passed if it did not run.
+- Never create or modify memories — doctor only diagnoses.
+- If the repository has no `.onecue/` and no CLI, say plainly: "OneCue is not installed in this project" and point to the install command rather than simulating results.
