@@ -3,10 +3,11 @@
  * onecue-doctor — standalone diagnostic.
  *
  * Zero dependencies. Checks both OneCue installs:
- *   - the skill store:    <project>/.onecue/memories/  (Markdown, agent-written)
- *   - the CLI store:      ~/.onecue/projects/<fp>/     (JSONL, `onecue` binary)
- *   - the hooks:          <project>/.claude/settings.local.json (Claude Code)
- *                         <project>/.devin/config.local.json   (Devin)
+ *   - the canonical store: <project>/.onecue/decisions/  (Markdown, git-visible)
+ *   - the skill fallback:  <project>/.onecue/memories/   (Markdown, no CLI)
+ *   - the CLI logs:        ~/.onecue/projects/<fp>/      (session/event JSONL)
+ *   - the hooks:           <project>/.claude/settings.local.json (Claude Code)
+ *                          <project>/.devin/config.local.json   (Devin)
  *
  * Usage: node doctor.mjs [--json] [--report]
  * Exit code is 1 when any check warns, so scripts and CI can rely on it.
@@ -26,6 +27,7 @@ import { basename, dirname, join } from "node:path";
 
 const HOOK_EVENTS = [
   "UserPromptSubmit",
+  "PreToolUse",
   "PostToolUse",
   "Stop",
   "SessionEnd",
@@ -126,13 +128,17 @@ const collect = () => {
   const major = Number(process.versions.node.split(".")[0]);
   check("Node >= 20", major >= 20, `found ${process.versions.node}`);
 
-  // Memory store: either the Markdown skill store (<project>/.onecue) or the
-  // CLI store (~/.onecue/projects/<fp>) counts — modern installs use the CLI.
   const skillDir = join(fp.root, ".onecue");
-  const skillMemories = join(skillDir, "memories");
-  const skillInstalled = existsSync(skillMemories);
+  const decisionsDir = join(skillDir, "decisions");
+  const memoriesDir = join(skillDir, "memories");
+  const decisionFiles = existsSync(decisionsDir)
+    ? readdirSync(decisionsDir).filter((name) => name.endsWith(".md"))
+    : [];
+  const memoryFiles = existsSync(memoriesDir)
+    ? readdirSync(memoriesDir).filter((name) => name.endsWith(".md"))
+    : [];
 
-  // CLI store: ~/.onecue/projects/<fingerprint>/config.json
+  // CLI session/event logs: ~/.onecue/projects/<fingerprint>/config.json
   const cliDir = join(
     process.env.ONECUE_HOME ?? join(homedir(), ".onecue"),
     "projects",
@@ -140,20 +146,24 @@ const collect = () => {
   );
   const cliConfig = join(cliDir, "config.json");
   const cliInstalled = existsSync(cliConfig);
+  const storePresent =
+    existsSync(decisionsDir) || cliInstalled || existsSync(memoriesDir);
   check(
-    "memory store present",
-    skillInstalled || cliInstalled,
-    cliInstalled
-      ? cliDir
-      : skillInstalled
-        ? skillMemories
-        : "run `onecue install` inside the repo"
+    "decision store present",
+    storePresent,
+    existsSync(decisionsDir)
+      ? decisionsDir
+      : cliInstalled
+        ? cliDir
+        : existsSync(memoriesDir)
+          ? memoriesDir
+          : "run `onecue init` inside the repo"
   );
 
   check(
     "store writable",
-    writableProbe(cliInstalled ? cliDir : skillDir),
-    cliInstalled ? cliDir : skillDir
+    writableProbe(existsSync(decisionsDir) ? decisionsDir : skillDir),
+    existsSync(decisionsDir) ? decisionsDir : skillDir
   );
 
   // Harness hooks: same JSON format in Claude Code and Devin config files.
@@ -216,28 +226,21 @@ const collect = () => {
     deadTargets.length > 0 ? `missing: ${deadTargets.join(", ")}` : undefined
   );
 
-  // CLI memories are JSONL; parsing fails open, so count the skipped gap.
-  const memoriesFile = join(cliDir, "memories.jsonl");
-  if (existsSync(memoriesFile)) {
-    const lines = readFileSync(memoriesFile, "utf8")
-      .split("\n")
-      .filter((line) => line.trim());
-    let parsed = 0;
-    for (const line of lines) {
-      try {
-        JSON.parse(line);
-        parsed += 1;
-      } catch {
-        // corrupt line
-      }
-    }
-    const corrupt = lines.length - parsed;
+  if (existsSync(decisionsDir)) {
     check(
-      "memories readable",
-      corrupt === 0,
-      corrupt > 0 ? `${corrupt} corrupt line(s) skipped` : `${parsed} records`
+      "decisions readable",
+      true,
+      `${decisionFiles.length} decisions`
     );
   }
+
+  check(
+    "skill memories imported",
+    !cliInstalled || memoryFiles.length === 0,
+    cliInstalled && memoryFiles.length > 0
+      ? `${memoryFiles.length} file(s) in .onecue/memories/ outside the canonical store — re-capture via \`onecue remember\``
+      : undefined
+  );
 
   return { checks, cliDir };
 };
