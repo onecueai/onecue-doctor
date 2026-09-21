@@ -1,7 +1,7 @@
 <h1 align="center">OneCue Doctor</h1>
 
 <p align="center">
-  <strong>Check the setup before blaming the memory.</strong><br>
+  <strong>The decision layer for coding agents — check the setup before blaming the memory.</strong><br>
   Diagnoses your OneCue installation — store, hooks, runtime — and tells you exactly what to fix.
 </p>
 
